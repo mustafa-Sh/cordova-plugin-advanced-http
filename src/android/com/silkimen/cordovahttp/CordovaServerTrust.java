@@ -71,7 +71,10 @@ class CordovaServerTrust implements Runnable {
         this.tlsConfiguration.setTrustManagers(this.noOpTrustManagers);
       } else if ("pinned".equals(this.mode)) {
         this.tlsConfiguration.setHostnameVerifier(null);
-        this.tlsConfiguration.setTrustManagers(this.getTrustManagers(this.getCertsFromBundle("www/assets/certificates")));
+        Log.e(TAG, "call getCertsFromBundle()");
+        callbackContext.error("call getCertsFromBundle()");
+        this.tlsConfiguration
+            .setTrustManagers(this.getTrustManagers(this.getCertsFromBundle("www/assets/certificates")));
       } else {
         this.tlsConfiguration.setHostnameVerifier(null);
         this.tlsConfiguration.setTrustManagers(this.getTrustManagers(this.getCertsFromKeyStore("AndroidCAStore")));
@@ -93,17 +96,33 @@ class CordovaServerTrust implements Runnable {
   }
 
   private KeyStore getCertsFromBundle(String path) throws GeneralSecurityException, IOException {
+    Log.e(TAG, "getCertsFromBundle() called");
+    callbackContext.error("getCertsFromBundle() called");
     AssetManager assetManager = this.activity.getAssets();
+    Log.e(TAG, "assetManager ", assetManager);
+    callbackContext.error("assetManager ", assetManager);
     String[] files = assetManager.list(path);
+    Log.e(TAG, "files ", files);
+    callbackContext.error("files ", files);
 
     CertificateFactory cf = CertificateFactory.getInstance("X.509");
+    Log.e(TAG, "cf ", cf);
+    callbackContext.error("cf", cf);
     String keyStoreType = KeyStore.getDefaultType();
+    Log.e(TAG, "keyStoreType ", keyStoreType);
+    callbackContext.error("keyStoreType ", keyStoreType);
     KeyStore keyStore = KeyStore.getInstance(keyStoreType);
+    Log.e(TAG, "keyStore1 ", keyStore);
+    callbackContext.error("keyStore1 ", keyStore);
 
     keyStore.load(null, null);
 
     for (int i = 0; i < files.length; i++) {
       int index = files[i].lastIndexOf('.');
+      Log.e(TAG, "index ", index);
+      callbackContext.error("index ", index);
+      Log.e(TAG, "files[i] ", files[i]);
+      callbackContext.error("files[i] ", files[i]);
 
       if (index == -1 || !files[i].substring(index).equals(".cer")) {
         continue;
@@ -112,12 +131,16 @@ class CordovaServerTrust implements Runnable {
       keyStore.setCertificateEntry("CA" + i, cf.generateCertificate(assetManager.open(path + "/" + files[i])));
     }
 
+    Log.e(TAG, "keyStore2 ", keyStore);
+    callbackContext.error("keyStore2 ", keyStore);
     return keyStore;
   }
 
   private KeyStore getCertsFromKeyStore(String storeType) throws GeneralSecurityException, IOException {
     KeyStore store = KeyStore.getInstance(storeType);
     store.load(null);
+    Log.e(TAG, "store ", store);
+    callbackContext.error("store ", store);
 
     return store;
   }
