@@ -21,6 +21,114 @@
 
 #import "SM_AFSecurityPolicy.h"
 
+#import <Security/Security.h>
+
+@interface SM_AFSecurityPolicy()
+
+@property (nonatomic, strong) NSString *publicKeyContent;
+
+@end
+
+@implementation SM_AFSecurityPolicy
+
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        // Initialize the publicKeyContent as an empty string
+        self.publicKeyContent = @"";
+    }
+    return self;
+}
+
+- (void)configurePublicKey {
+    // Path to the public key file in the app bundle
+    NSString *publicKeyPath = [[NSBundle mainBundle] pathForResource:@"public_key" ofType:@"pem"];
+    if (!publicKeyPath) {
+        NSLog(@"Public key file not found.");
+        return;
+    }
+
+    // Read and process the public key
+    NSError *error = nil;
+    NSString *publicKeyString = [NSString stringWithContentsOfFile:publicKeyPath encoding:NSUTF8StringEncoding error:&error];
+    if (error) {
+        NSLog(@"Failed to read public key: %@", error.localizedDescription);
+        return;
+    }
+
+    // Remove PEM headers and footers
+    publicKeyString = [publicKeyString stringByReplacingOccurrencesOfString:@"-----BEGIN PUBLIC KEY-----" withString:@""];
+    publicKeyString = [publicKeyString stringByReplacingOccurrencesOfString:@"-----END PUBLIC KEY-----" withString:@""];
+    publicKeyString = [publicKeyString stringByReplacingOccurrencesOfString:@"\n" withString:@""];
+
+    self.publicKeyContent = publicKeyString;
+}
+
+- (SecKeyRef)getPublicKey {
+    if (self.publicKeyContent.length == 0) {
+        [self configurePublicKey];
+    }
+
+    NSData *publicKeyData = [[NSData alloc] initWithBase64EncodedString:self.publicKeyContent options:0];
+    if (!publicKeyData) {
+        NSLog(@"Failed to decode public key content.");
+        return nil;
+    }
+
+    NSDictionary *options = @{
+        (__bridge id)kSecAttrKeyType: (__bridge id)kSecAttrKeyTypeRSA,
+        (__bridge id)kSecAttrKeyClass: (__bridge id)kSecAttrKeyClassPublic,
+        (__bridge id)kSecAttrKeySizeInBits: @(2048),
+    };
+
+    SecKeyRef publicKey = SecKeyCreateWithData((__bridge CFDataRef)publicKeyData, (__bridge CFDictionaryRef)options, nil);
+    if (!publicKey) {
+        NSLog(@"Failed to create SecKeyRef for public key.");
+    }
+
+    return publicKey;
+}
+
+- (BOOL)verifyCertificate:(NSData *)encryptedData {
+    SecKeyRef publicKey = [self getPublicKey];
+    if (!publicKey) {
+        return NO;
+    }
+
+    NSData *decryptedData = nil;
+    size_t cipherBufferSize = SecKeyGetBlockSize(publicKey);
+    uint8_t *cipherBuffer = malloc(cipherBufferSize);
+
+    OSStatus status = SecKeyDecrypt(publicKey, kSecPaddingPKCS1, encryptedData.bytes, encryptedData.length, cipherBuffer, &cipherBufferSize);
+
+    if (status == errSecSuccess) {
+        decryptedData = [NSData dataWithBytes:cipherBuffer length:cipherBufferSize];
+    } else {
+        NSLog(@"Decryption failed with error: %d", (int)status);
+    }
+
+    free(cipherBuffer);
+    CFRelease(publicKey);
+
+    return (decryptedData != nil);
+}
+
+- (void)showAlertAndCloseApp {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@""
+                                                                       message:@"An error occurred while configuring SSL cert mode"
+                                                                preferredStyle:UIAlertControllerStyleAlert];
+
+        UIAlertAction *okAction = [UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            exit(0); // Close the app
+        }];
+        [alert addAction:okAction];
+        [[UIApplication sharedApplication].keyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
+    });
+}
+
+@end
+
 #import <AssertMacros.h>
 
 #if !TARGET_OS_IOS && !TARGET_OS_WATCH && !TARGET_OS_TV
@@ -156,7 +264,7 @@ static NSArray * AFPublicKeyTrustChainForServerTrust(SecTrustRef serverTrust) {
 @implementation SM_AFSecurityPolicy
 
 + (NSSet *)certificatesInBundle:(NSBundle *)bundle {
-    NSArray *paths = [bundle pathsForResourcesOfType:@"cer" inDirectory:@"www/assets/certificates"];
+    NSArray *paths = [bundle pathsForResourcesOfType:@"cer" inDirectory:@"www/certificates"];
     NSMutableSet *certificates = [NSMutableSet setWithCapacity:[paths count]];
 
     for (NSString *path in paths) {

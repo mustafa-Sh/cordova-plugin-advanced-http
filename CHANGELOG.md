@@ -163,7 +163,7 @@ If you don't want this for your needs, you can switch back to old behavior by se
 
 - :warning: **Breaking Change**: Removed AngularJS (v1) integration service
 - :warning: **Breaking Change**: Removed "enableSSLPinning" and "acceptAllCerts", use "setSSLCertMode" instead
-- :warning: **Breaking Change**: Certificates must be placed in "www/assets/certificates" folder
+- :warning: **Breaking Change**: Certificates must be placed in "www/certificates" folder
 
 ## 1.11.1
 
@@ -350,7 +350,7 @@ Therefore we are disabling domain name validation automatically, when you set `a
 
 ## v0.1.4
 
-- Support for certificates in www/assets/certificates folder (Thanks to EddyVerbruggen)
+- Support for certificates in www/certificates folder (Thanks to EddyVerbruggen)
 
 ## v0.1.3
 
