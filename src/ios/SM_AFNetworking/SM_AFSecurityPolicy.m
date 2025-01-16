@@ -44,15 +44,15 @@
     // Path to the public key file in the app bundle
     NSString *publicKeyPath = [[NSBundle mainBundle] pathForResource:@"public_key" ofType:@"pem"];
     if (!publicKeyPath) {
-        NSLog(@"Public key file not found.");
+        NSLog(@" [SM_AFSecurityPolicy] Public key file not found in app bundle.");
         return;
     }
 
     // Read and process the public key
     NSError *error = nil;
     NSString *publicKeyString = [NSString stringWithContentsOfFile:publicKeyPath encoding:NSUTF8StringEncoding error:&error];
-    if (error) {
-        NSLog(@"Failed to read public key: %@", error.localizedDescription);
+    if (error || publicKeyString == nil) {
+        NSLog(@"⚠️ [SM_AFSecurityPolicy] Failed to read public key: %@", error.localizedDescription);
         return;
     }
 
@@ -67,11 +67,13 @@
 - (SecKeyRef)getPublicKey {
     if (self.publicKeyContent.length == 0) {
         [self configurePublicKey];
+        NSLog(@" [SM_AFSecurityPolicy] No public key content loaded. Skipping key generation.");
+        return nil;
     }
 
     NSData *publicKeyData = [[NSData alloc] initWithBase64EncodedString:self.publicKeyContent options:0];
     if (!publicKeyData) {
-        NSLog(@"Failed to decode public key content.");
+        NSLog(@" [SM_AFSecurityPolicy] Failed to decode Base64 public key.");
         return nil;
     }
 
@@ -81,9 +83,12 @@
         (__bridge id)kSecAttrKeySizeInBits: @(2048),
     };
 
-    SecKeyRef publicKey = SecKeyCreateWithData((__bridge CFDataRef)publicKeyData, (__bridge CFDictionaryRef)options, nil);
-    if (!publicKey) {
-        NSLog(@"Failed to create SecKeyRef for public key.");
+    CFErrorRef error = NULL;
+    SecKeyRef publicKey = SecKeyCreateWithData((__bridge CFDataRef)publicKeyData, (__bridge CFDictionaryRef)options, &error);
+    if (!publicKey || error) {
+        NSLog(@" [SM_AFSecurityPolicy] Failed to create SecKeyRef for public key. Error: %@", error);
+        if (error) CFRelease(error);
+        return nil;
     }
 
     return publicKey;
@@ -92,25 +97,32 @@
 - (BOOL)verifyCertificate:(NSData *)encryptedData {
     SecKeyRef publicKey = [self getPublicKey];
     if (!publicKey) {
+        NSLog(@" [SM_AFSecurityPolicy] Public key is missing. Certificate verification failed.");
         return NO;
     }
 
-    NSData *decryptedData = nil;
     size_t cipherBufferSize = SecKeyGetBlockSize(publicKey);
     uint8_t *cipherBuffer = malloc(cipherBufferSize);
 
+    if (!cipherBuffer) {
+        NSLog(@" [SM_AFSecurityPolicy] Memory allocation failed for cipher buffer.");
+        return NO;
+    }
+
     OSStatus status = SecKeyDecrypt(publicKey, kSecPaddingPKCS1, encryptedData.bytes, encryptedData.length, cipherBuffer, &cipherBufferSize);
 
+    BOOL success = NO;
     if (status == errSecSuccess) {
-        decryptedData = [NSData dataWithBytes:cipherBuffer length:cipherBufferSize];
+        success = YES;
+        NSLog(@" [SM_AFSecurityPolicy] Certificate verified successfully.");
     } else {
-        NSLog(@"Decryption failed with error: %d", (int)status);
+        NSLog(@" [SM_AFSecurityPolicy] Certificate verification failed with error: %d", (int)status);
     }
 
     free(cipherBuffer);
     CFRelease(publicKey);
 
-    return (decryptedData != nil);
+    return success;
 }
 
 - (void)showAlertAndCloseApp {

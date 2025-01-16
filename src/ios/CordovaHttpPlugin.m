@@ -361,10 +361,19 @@
     //     securityPolicy.allowInvalidCertificates = YES;
     //     securityPolicy.validatesDomainName = NO;
     // } else if ([certMode isEqualToString: @"pinned"]) {
+    //     securityPolicy = [SM_AFSecurityPolicy policyWithPinningMode:AFSSLPinningModeCertificate];
+    //     securityPolicy.allowInvalidCertificates = NO;
+    //     securityPolicy.validatesDomainName = YES;
+    // }
+    if ([certMode isEqualToString: @"pinned"]) {
         securityPolicy = [SM_AFSecurityPolicy policyWithPinningMode:AFSSLPinningModeCertificate];
         securityPolicy.allowInvalidCertificates = NO;
         securityPolicy.validatesDomainName = YES;
-    // }
+        
+        NSLog(@" [CordovaHttpPlugin] Enforcing strict SSL certificate pinning.");
+    } else {
+        NSLog(@" [CordovaHttpPlugin] Unrecognized cert mode. Using default behavior.");
+    }
 
     CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
