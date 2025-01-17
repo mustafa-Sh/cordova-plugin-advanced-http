@@ -42,6 +42,7 @@
     NSString *publicKeyPath = [[NSBundle mainBundle] pathForResource:@"public_key" ofType:@"pem"];
     
     if (!publicKeyPath) {
+        NSLog(@"Public key file not found.");
         [self showAlert:@"Public key file not found."];
         return;
     }
@@ -51,6 +52,7 @@
     NSString *publicKeyString = [NSString stringWithContentsOfFile:publicKeyPath encoding:NSUTF8StringEncoding error:&error];
 
     if (error) {
+         NSLog(@"Failed to read public key: %@", error.localizedDescription);
         [self showAlert:[NSString stringWithFormat:@"Failed to read public key: %@", error.localizedDescription]];
         return;
     }
@@ -61,6 +63,7 @@
     publicKeyString = [publicKeyString stringByReplacingOccurrencesOfString:@"\n" withString:@""];
 
     self.publicKeyContent = publicKeyString;
+    NSLog(@"PublicKeyContent: %@", self.publicKeyContent);
 }
 
 - (SecKeyRef)getPublicKey {
@@ -71,6 +74,7 @@
     NSData *publicKeyData = [[NSData alloc] initWithBase64EncodedString:self.publicKeyContent options:0];
     
     if (!publicKeyData) {
+        NSLog(@"Failed to decode public key content.");
         [self showAlert:@"Failed to decode public key content."];
         return nil;
     }
@@ -83,6 +87,7 @@
 
     SecKeyRef publicKey = SecKeyCreateWithData((__bridge CFDataRef)publicKeyData, (__bridge CFDictionaryRef)options, nil);
     if (!publicKey) {
+        NSLog(@"Failed to create SecKeyRef for public key.");
          [self showAlert:@"Failed to create SecKeyRef for public key."];
     }
 
@@ -92,6 +97,7 @@
 - (BOOL)verifyCertificate:(NSData *)encryptedData {
     SecKeyRef publicKey = [self getPublicKey];
     if (!publicKey) {
+        NSLog(@"No public key available for verification.");
         return NO;
     }
 
@@ -103,7 +109,9 @@
 
     if (status == errSecSuccess) {
         decryptedData = [NSData dataWithBytes:cipherBuffer length:cipherBufferSize];
+        NSLog(@"Certificate successfully decrypted.");
     } else {
+        NSLog(@"Decryption failed with error code: %d", (int)status);z
         [self showAlert:[NSString stringWithFormat:@"Decryption failed with error: %d", (int)status]];
     }
 
