@@ -111,7 +111,7 @@
         decryptedData = [NSData dataWithBytes:cipherBuffer length:cipherBufferSize];
         NSLog(@"Certificate successfully decrypted.");
     } else {
-        NSLog(@"Decryption failed with error code: %d", (int)status);z
+        NSLog(@"Decryption failed with error code: %d", (int)status);
         [self showAlert:[NSString stringWithFormat:@"Decryption failed with error: %d", (int)status]];
     }
 
