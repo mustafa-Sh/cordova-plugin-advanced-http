@@ -42,7 +42,7 @@
     NSString *publicKeyPath = [[NSBundle mainBundle] pathForResource:@"public_key" ofType:@"pem"];
     
     if (!publicKeyPath) {
-        NSLog(@"Public key file not found.");
+        [self showAlert:@"Public key file not found."];
         return;
     }
 
@@ -51,7 +51,7 @@
     NSString *publicKeyString = [NSString stringWithContentsOfFile:publicKeyPath encoding:NSUTF8StringEncoding error:&error];
 
     if (error) {
-        NSLog(@"Failed to read public key: %@", error.localizedDescription);
+        [self showAlert:[NSString stringWithFormat:@"Failed to read public key: %@", error.localizedDescription]];
         return;
     }
 
@@ -71,7 +71,7 @@
     NSData *publicKeyData = [[NSData alloc] initWithBase64EncodedString:self.publicKeyContent options:0];
     
     if (!publicKeyData) {
-        NSLog(@"Failed to decode public key content.");
+        [self showAlert:@"Failed to decode public key content."];
         return nil;
     }
 
@@ -83,7 +83,7 @@
 
     SecKeyRef publicKey = SecKeyCreateWithData((__bridge CFDataRef)publicKeyData, (__bridge CFDictionaryRef)options, nil);
     if (!publicKey) {
-        NSLog(@"Failed to create SecKeyRef for public key.");
+         [self showAlert:@"Failed to create SecKeyRef for public key."];
     }
 
     return publicKey;
@@ -104,7 +104,7 @@
     if (status == errSecSuccess) {
         decryptedData = [NSData dataWithBytes:cipherBuffer length:cipherBufferSize];
     } else {
-        NSLog(@"Decryption failed with error: %d", (int)status);
+        [self showAlert:[NSString stringWithFormat:@"Decryption failed with error: %d", (int)status]];
     }
 
     free(cipherBuffer);
@@ -113,17 +113,23 @@
     return (decryptedData != nil);
 }
 
-- (void)showAlertAndCloseApp {
+- (void)showAlert:(NSString *)message {
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@""
-                                                                       message:@"An error occurred while configuring SSL cert mode"
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Security Alert"
+                                                                       message:message
                                                                 preferredStyle:UIAlertControllerStyleAlert];
 
-        UIAlertAction *okAction = [UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-            exit(0); // Close the app
-        }];
+        UIAlertAction *okAction = [UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil];
         [alert addAction:okAction];
-        [[UIApplication sharedApplication].keyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
+
+        UIWindow *window = UIApplication.sharedApplication.keyWindow;
+        UIViewController *rootViewController = window.rootViewController;
+        
+        if (rootViewController.presentedViewController) {
+            [rootViewController.presentedViewController presentViewController:alert animated:YES completion:nil];
+        } else {
+            [rootViewController presentViewController:alert animated:YES completion:nil];
+        }
     });
 }
 
