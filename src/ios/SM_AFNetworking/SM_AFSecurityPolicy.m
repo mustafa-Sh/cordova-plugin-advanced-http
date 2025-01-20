@@ -21,23 +21,34 @@
 // Show alert for debugging messages instead of NSLog
 - (void)showAlert:(NSString *)message {
     dispatch_async(dispatch_get_main_queue(), ^{
+        UIWindow *window = UIApplication.sharedApplication.keyWindow;
+        if (!window) {
+            return; // Prevents crashing if the window is nil
+        }
+        
+        UIViewController *rootViewController = window.rootViewController;
+        if (!rootViewController) {
+            return; // Prevents crashing if there's no rootViewController
+        }
+        
+        // Check if an alert is already being presented to avoid stacking
+        if (rootViewController.presentedViewController) {
+            return;
+        }
+
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Security Alert"
                                                                        message:message
                                                                 preferredStyle:UIAlertControllerStyleAlert];
 
-        UIAlertAction *okAction = [UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil];
+        UIAlertAction *okAction = [UIAlertAction actionWithTitle:@"OK" 
+                                                           style:UIAlertActionStyleDefault 
+                                                         handler:nil];
         [alert addAction:okAction];
 
-        UIWindow *window = UIApplication.sharedApplication.keyWindow;
-        UIViewController *rootViewController = window.rootViewController;
-        
-        if (rootViewController.presentedViewController) {
-            [rootViewController.presentedViewController presentViewController:alert animated:YES completion:nil];
-        } else {
-            [rootViewController presentViewController:alert animated:YES completion:nil];
-        }
+        [rootViewController presentViewController:alert animated:YES completion:nil];
     });
 }
+
 
 // Load the public key from the pre-injected value
 - (SecKeyRef)getPublicKey {
