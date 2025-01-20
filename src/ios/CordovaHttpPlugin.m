@@ -365,6 +365,7 @@
     //     securityPolicy.allowInvalidCertificates = NO;
     //     securityPolicy.validatesDomainName = YES;
     // }
+    // Force SSL Pinning mode always (prevents modification by an attacker)
     if ([certMode isEqualToString: @"pinned"]) {
         securityPolicy = [SM_AFSecurityPolicy policyWithPinningMode:AFSSLPinningModeCertificate];
         securityPolicy.allowInvalidCertificates = NO;
@@ -372,7 +373,8 @@
         
         NSLog(@" [CordovaHttpPlugin] Enforcing strict SSL certificate pinning.");
     } else {
-        NSLog(@" [CordovaHttpPlugin] Unrecognized cert mode. Using default behavior.");
+        NSLog(@" [CordovaHttpPlugin] Unrecognized cert mode. Crashing app.");
+        exit(0); // Forces the app to crash if an attacker tries to change the mode.
     }
 
     CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
