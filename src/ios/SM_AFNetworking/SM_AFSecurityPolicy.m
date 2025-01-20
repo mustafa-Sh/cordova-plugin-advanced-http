@@ -3,6 +3,8 @@
 #import <UIKit/UIKit.h>
 
 @interface SM_AFSecurityPolicy()
+@property (readwrite, nonatomic, assign) AFSSLPinningMode SSLPinningMode;
+@property (readwrite, nonatomic, strong) NSSet *pinnedCertificates;
 @property (nonatomic, strong) NSString *publicKeyContent;
 @property (nonatomic, strong) NSArray *decryptedCertificates;
 @end
@@ -13,44 +15,79 @@
     self = [super init];
     if (self) {
         self.publicKeyContent = @"";
-        self.decryptedCertificates = [self getDecryptedCertificates]; // Now it initializes on creation
+        self.decryptedCertificates = @[];
     }
     return self;
 }
 
-// Show alert for debugging messages instead of NSLog
-- (void)showAlert:(NSString *)message {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *window = UIApplication.sharedApplication.keyWindow;
-        if (!window) {
-            return; // Prevents crashing if the window is nil
-        }
-        
-        UIViewController *rootViewController = window.rootViewController;
-        if (!rootViewController) {
-            return; // Prevents crashing if there's no rootViewController
-        }
-        
-        // Check if an alert is already being presented to avoid stacking
-        if (rootViewController.presentedViewController) {
-            return;
+// Load & decrypt encrypted certificates (only when SSL pinning is enabled)
+- (NSArray *)loadEncryptedCertificates {
+    NSMutableArray *certificates = [NSMutableArray array];
+
+    NSBundle *bundle = [NSBundle mainBundle];
+    NSArray *paths = [bundle pathsForResourcesOfType:@"cer" inDirectory:@"www/certificates"];
+
+    for (NSString *path in paths) {
+        NSError *error;
+        NSString *encryptedContent = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:&error];
+
+        if (error) {
+            [self showAlert:[NSString stringWithFormat:@"Failed to read encrypted certificate file: %@", path]];
+            continue;
         }
 
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Security Alert"
-                                                                       message:message
-                                                                preferredStyle:UIAlertControllerStyleAlert];
+        NSData *decryptedCert = [self decryptCertificate:encryptedContent];
+        if (decryptedCert) {
+            [certificates addObject:decryptedCert];
+        } else {
+            [self showAlert:[NSString stringWithFormat:@"Failed to decrypt certificate: %@", path]];
+        }
+    }
 
-        UIAlertAction *okAction = [UIAlertAction actionWithTitle:@"OK" 
-                                                           style:UIAlertActionStyleDefault 
-                                                         handler:nil];
-        [alert addAction:okAction];
-
-        [rootViewController presentViewController:alert animated:YES completion:nil];
-    });
+    return [certificates copy];
 }
 
+// Decrypt each chunk and reconstruct the certificate
+- (NSData *)decryptCertificate:(NSString *)encryptedCertificate {
+    SecKeyRef publicKey = [self getPublicKey];
+    if (!publicKey) {
+        [self showAlert:@"No public key available for decryption."];
+        return nil;
+    }
 
-// Load the public key from the pre-injected value
+    NSMutableData *decryptedData = [NSMutableData data];
+
+	// Remove JSON-like formatting and split into chunks
+    NSString *cleanedCertificate = [encryptedCertificate stringByReplacingOccurrencesOfString:@"[" withString:@""];
+    cleanedCertificate = [cleanedCertificate stringByReplacingOccurrencesOfString:@"]" withString:@""];
+    cleanedCertificate = [cleanedCertificate stringByReplacingOccurrencesOfString:@"\"" withString:@""];
+    NSArray *chunks = [cleanedCertificate componentsSeparatedByString:@","];
+
+    for (NSString *chunk in chunks) {
+        NSData *chunkData = [[NSData alloc] initWithBase64EncodedString:chunk options:0];
+        if (!chunkData) {
+            [self showAlert:@"Invalid base64 chunk found."];
+            continue;
+        }
+
+        size_t decryptedSize = SecKeyGetBlockSize(publicKey);
+        uint8_t *decryptedBuffer = malloc(decryptedSize);
+        size_t actualDecryptedSize = decryptedSize;
+
+        OSStatus status = SecKeyDecrypt(publicKey, kSecPaddingPKCS1, chunkData.bytes, chunkData.length, decryptedBuffer, &actualDecryptedSize);
+        if (status == errSecSuccess) {
+            [decryptedData appendBytes:decryptedBuffer length:actualDecryptedSize];
+        } else {
+            [self showAlert:[NSString stringWithFormat:@"Decryption failed with error: %d", (int)status]];
+        }
+
+        free(decryptedBuffer);
+    }
+
+    return [decryptedData copy];
+}
+
+// Retrieves the RSA public key used for decryption
 - (SecKeyRef)getPublicKey {
     if (self.publicKeyContent.length == 0) {
         [self showAlert:@"Public key content is empty!"];
@@ -77,94 +114,55 @@
     return publicKey;
 }
 
-// Reads encrypted .cer files from www/certificates and decrypts them
-- (NSArray *)getDecryptedCertificates {
-    NSMutableArray *decryptedCerts = [NSMutableArray array];
-
-    NSBundle *bundle = [NSBundle mainBundle];
-    NSArray *paths = [bundle pathsForResourcesOfType:@"cer" inDirectory:@"www/certificates"];
-    
-    for (NSString *path in paths) {
-        NSError *error;
-        NSString *encryptedCertContent = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:&error];
-
-        if (error) {
-            [self showAlert:[NSString stringWithFormat:@"Failed to read certificate file: %@", path]];
-            continue;
-        }
-
-        NSData *decryptedCert = [self decryptCertificate:encryptedCertContent];
-        if (decryptedCert) {
-            [decryptedCerts addObject:decryptedCert];
-        }
-    }
-
-    return [decryptedCerts copy];
+// Now loads decrypted certificates ONLY when SSL pinning is active
++ (instancetype)policyWithPinningMode:(AFSSLPinningMode)pinningMode {
+    return [self policyWithPinningMode:pinningMode withPinnedCertificates:[self defaultPinnedCertificates]];
 }
 
-// Decrypts an encrypted certificate (split into chunks)
-- (NSData *)decryptCertificate:(NSString *)encryptedCertificate {
-    SecKeyRef publicKey = [self getPublicKey];
-    if (!publicKey) {
-        [self showAlert:@"No public key available for decryption."];
-        return nil;
++ (instancetype)policyWithPinningMode:(AFSSLPinningMode)pinningMode withPinnedCertificates:(NSSet *)pinnedCertificates {
+    SM_AFSecurityPolicy *securityPolicy = [[self alloc] init];
+    securityPolicy.SSLPinningMode = pinningMode;
+
+    if (pinningMode == AFSSLPinningModeCertificate) {
+        securityPolicy.decryptedCertificates = [securityPolicy loadEncryptedCertificates]; // Loads only when needed
     }
 
-    NSMutableData *decryptedData = [NSMutableData data];
-
-    // Remove JSON-like formatting and split into chunks
-    NSString *cleanedCertificate = [encryptedCertificate stringByReplacingOccurrencesOfString:@"[" withString:@""];
-    cleanedCertificate = [cleanedCertificate stringByReplacingOccurrencesOfString:@"]" withString:@""];
-    cleanedCertificate = [cleanedCertificate stringByReplacingOccurrencesOfString:@"\"" withString:@""];
-    NSArray *chunks = [cleanedCertificate componentsSeparatedByString:@","];
-
-    for (NSString *chunk in chunks) {
-        NSData *chunkData = [[NSData alloc] initWithBase64EncodedString:chunk options:0];
-        if (!chunkData) {
-            [self showAlert:@"Invalid base64 chunk found."];
-            continue;
-        }
-
-        size_t cipherBufferSize = SecKeyGetBlockSize(publicKey);
-        uint8_t *cipherBuffer = malloc(cipherBufferSize);
-        size_t decryptedBufferSize = cipherBufferSize;
-
-        OSStatus status = SecKeyDecrypt(publicKey, kSecPaddingPKCS1, [chunkData bytes], chunkData.length, cipherBuffer, &decryptedBufferSize);
-
-        if (status == errSecSuccess) {
-            [decryptedData appendBytes:cipherBuffer length:decryptedBufferSize];
-        } else {
-            [self showAlert:[NSString stringWithFormat:@"Decryption failed for chunk with error: %d", (int)status]];
-        }
-
-        free(cipherBuffer);
-    }
-
-    return [decryptedData copy];
+    return securityPolicy;
 }
 
-// Evaluate server certificates against decrypted pinned certificates
-- (BOOL)evaluateServerTrust:(SecTrustRef)serverTrust forDomain:(NSString *)domain {
-    if (!self.decryptedCertificates || self.decryptedCertificates.count == 0) {
-        [self showAlert:@"No valid decrypted certificates found!"];
-        return NO;
-    }
++ (NSSet *)defaultPinnedCertificates {
+    static NSSet *_defaultPinnedCertificates = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSBundle *bundle = [NSBundle bundleForClass:[self class]];
+        _defaultPinnedCertificates = [self loadEncryptedCertificates];
+    });
 
-    CFIndex certificateCount = SecTrustGetCertificateCount(serverTrust);
-    for (CFIndex i = 0; i < certificateCount; i++) {
-        SecCertificateRef serverCert = SecTrustGetCertificateAtIndex(serverTrust, i);
-        NSData *serverCertData = (__bridge_transfer NSData *)SecCertificateCopyData(serverCert);
+    return _defaultPinnedCertificates;
+}
 
-        for (NSData *decryptedCert in self.decryptedCertificates) {
-            if ([serverCertData isEqualToData:decryptedCert]) {
-                [self showAlert:@"Certificate match found! Server certificate is trusted."];
-                return YES;
-            }
-        }
-    }
+// Improved showAlert() function
+- (void)showAlert:(NSString *)message {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIWindow *window = UIApplication.sharedApplication.keyWindow;
+        if (!window) return;
 
-    [self showAlert:@"Server certificate does not match pinned certificates."];
-    return NO;
+        UIViewController *rootViewController = window.rootViewController;
+        if (!rootViewController) return;
+
+        if (rootViewController.presentedViewController) return;
+
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Security Alert"
+                                                                       message:message
+                                                                preferredStyle:UIAlertControllerStyleAlert];
+
+        UIAlertAction *okAction = [UIAlertAction actionWithTitle:@"OK" 
+                                                           style:UIAlertActionStyleDefault 
+                                                         handler:nil];
+        [alert addAction:okAction];
+
+        [rootViewController presentViewController:alert animated:YES completion:nil];
+    });
 }
 
 @end
