@@ -4,7 +4,7 @@
 
 @interface SM_AFSecurityPolicy()
 @property (readwrite, nonatomic, assign) AFSSLPinningMode SSLPinningMode;
-@property (readwrite, nonatomic, strong) NSSet *pinnedCertificates;
+@property (nonatomic, strong) NSSet *pinnedCertificates;
 @property (nonatomic, strong) NSString *publicKeyContent;
 @property (nonatomic, strong) NSArray *decryptedCertificates;
 @end
@@ -130,12 +130,13 @@
     return securityPolicy;
 }
 
+// Default pinned certificates now correctly loads encrypted certificates
 + (NSSet *)defaultPinnedCertificates {
     static NSSet *_defaultPinnedCertificates = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        NSBundle *bundle = [NSBundle bundleForClass:[self class]];
-        _defaultPinnedCertificates = [self loadEncryptedCertificates];
+        SM_AFSecurityPolicy *policy = [[SM_AFSecurityPolicy alloc] init];
+        _defaultPinnedCertificates = [NSSet setWithArray:[policy loadEncryptedCertificates]];
     });
 
     return _defaultPinnedCertificates;
