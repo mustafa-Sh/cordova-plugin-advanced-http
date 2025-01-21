@@ -4,7 +4,6 @@
 
 @interface SM_AFSecurityPolicy()
 @property (readwrite, nonatomic, assign) AFSSLPinningMode SSLPinningMode;
-@property (nonatomic, strong) NSSet *pinnedCertificates;
 @property (nonatomic, strong) NSString *publicKeyContent;
 @property (nonatomic, strong) NSArray *decryptedCertificates;
 @end
